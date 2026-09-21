@@ -569,3 +569,15 @@ test "resample(2w, mean) keeps Monday-anchored two-week bins" {
   @test.assert_eq(got.ts, [1703462400000, 1704672000000])
   assert_doubles_eq(got.values, [3.0, 5.0])
 }
+
+///|
+test "resample buckets pre-epoch timestamps with floor semantics" {
+  // -1000 ms is 1 second before 1970-01-01, still inside the day that
+  // starts at -86400000; truncating % would wrongly round toward zero.
+  let s = series_at([-1000, 86399000], [1.0, 2.0])
+  let got = s.resample(@moonts.Day, @moonts.Sum) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [-86400000, 0])
+  assert_doubles_eq(got.values, [1.0, 2.0])
+}
