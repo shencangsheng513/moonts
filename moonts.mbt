@@ -248,6 +248,21 @@ pub(all) enum Frequency {
   Day
   Week
   Month
+  /// `5min`, `2h`, `30s`, ... : `n` consecutive fixed-size bins.
+  Counted(Int, BasicFrequency)
+} derive(Eq, Debug)
+
+///|
+/// Units with a constant millisecond span, i.e. everything a counted
+/// frequency may multiply. Month is excluded on purpose: calendar months
+/// have no fixed length, so `Counted(n, Month)` would be an invalid state
+/// made unrepresentable.
+pub(all) enum BasicFrequency {
+  Second
+  Minute
+  Hour
+  Day
+  Week
 } derive(Eq, Debug)
 
 ///|
@@ -263,10 +278,17 @@ pub extend Frequency with Eq::{not_equal, equal}
 pub extend Frequency with @debug.Debug::{to_repr}
 
 ///|
+pub extend BasicFrequency with Eq::{not_equal, equal}
+
+///|
+pub extend BasicFrequency with @debug.Debug::{to_repr}
+
+///|
 /// Parse a pandas-style frequency alias.
 ///
-/// Accepts `s`, `min`, `h`, `d`, `w`, and `me` (case-insensitive). Counted
-/// forms like `5min` are not supported yet and return None. `me` maps to
+/// Accepts `s`, `min`, `h`, `d`, `w`, and `me` (case-insensitive), plus
+/// counted forms over the fixed-span units: `30s`, `5min`, `2h`, `3d`,
+/// `2w`. Counted months are rejected (no fixed span). `me` maps to
 /// calendar-month buckets (pandas' month-end labeling is out of v0 scope).
 pub fn Frequency::from_string(s : String) -> Frequency? {
   match s.to_lower() {
@@ -276,8 +298,30 @@ pub fn Frequency::from_string(s : String) -> Frequency? {
     "d" => Some(Day)
     "w" => Some(Week)
     "me" | "month" => Some(Month)
-    _ => None
+    _ => parse_counted(s.to_lower())
   }
+}
+
+///|
+fn parse_counted(s : String) -> Frequency? {
+  let units = [
+    ("min", BasicFrequency::Minute),
+    ("s", BasicFrequency::Second),
+    ("h", BasicFrequency::Hour),
+    ("d", BasicFrequency::Day),
+    ("w", BasicFrequency::Week),
+  ]
+  for (suffix, base) in units {
+    if s.has_suffix(suffix) && s.length() > suffix.length() {
+      let head = s[:s.length() - suffix.length()]
+      let count = Some(@string.FromStr::from_str(head)) catch { _ => None }
+      return match count {
+        Some(k) if k >= 1 => Some(Counted(k, base))
+        _ => None
+      }
+    }
+  }
+  None
 }
 
 ///|
@@ -348,19 +392,37 @@ fn days_from_civil(y : Int64, m : Int64, d : Int64) -> Int64 {
 }
 
 ///|
-fn bucket_start(t : Int64, freq : Frequency) -> Int64 {
+/// `(step_ms, anchor_ms)` for every fixed-span frequency; None for
+/// calendar Month, which needs civil-date arithmetic. Bins are
+/// `anchor + k * step`; the Week anchor of 4 days is the first Monday
+/// after the epoch (day 0 was a Thursday).
+fn step_anchor(freq : Frequency) -> (Int64, Int64)? {
   match freq {
-    Second => t - floor_mod(t, 1000L)
-    Minute => t - floor_mod(t, 60000L)
-    Hour => t - floor_mod(t, 3600000L)
-    Day => t - floor_mod(t, day_ms)
-    Week => {
-      // Epoch day 0 (1970-01-01) was a Thursday, i.e. 3 days into a
-      // Monday-started week.
-      let day = floor_div(t, day_ms)
-      (day - floor_mod(day + 3L, 7L)) * day_ms
+    Month => None
+    Second => Some((1000L, 0L))
+    Minute => Some((60000L, 0L))
+    Hour => Some((3600000L, 0L))
+    Day => Some((day_ms, 0L))
+    Week => Some((7L * day_ms, 4L * day_ms))
+    Counted(n, base) => {
+      let step = match base {
+        BasicFrequency::Second => 1000L
+        BasicFrequency::Minute => 60000L
+        BasicFrequency::Hour => 3600000L
+        BasicFrequency::Day => day_ms
+        BasicFrequency::Week => 7L * day_ms
+      }
+      let anchor = if base == BasicFrequency::Week { 4L * day_ms } else { 0L }
+      Some((n.to_int64() * step, anchor))
     }
-    Month => {
+  }
+}
+
+///|
+fn bucket_start(t : Int64, freq : Frequency) -> Int64 {
+  match step_anchor(freq) {
+    Some((step, anchor)) => t - floor_mod(t - anchor, step)
+    None => {
       let (y, m, _) = civil_from_days(floor_div(t, day_ms))
       days_from_civil(y, m, 1L) * day_ms
     }
@@ -369,13 +431,9 @@ fn bucket_start(t : Int64, freq : Frequency) -> Int64 {
 
 ///|
 fn nxtbucket_start(start : Int64, freq : Frequency) -> Int64 {
-  match freq {
-    Second => start + 1000L
-    Minute => start + 60000L
-    Hour => start + 3600000L
-    Day => start + day_ms
-    Week => start + 7L * day_ms
-    Month => {
+  match step_anchor(freq) {
+    Some((step, _)) => start + step
+    None => {
       let (y, m, _) = civil_from_days(floor_div(start, day_ms))
       if m == 12L {
         days_from_civil(y + 1L, 1L, 1L) * day_ms

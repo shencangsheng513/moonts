@@ -9,7 +9,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [x] `Series`: aligned (timestamp, value) columns with strict-increasing validation
 - [x] `rolling` (count windows): `rolling_mean` / `sum` / `min` / `max` / `std` with `min_periods` semantics
 - [x] `rolling`: duration-based windows via `rolling_by(window_ms, min_periods, agg)` (half-open, pandas-compatible)
-- [x] `resample`: calendar binning (s / min / h / day / week / month) with mean / sum / min / max / std
+- [x] `resample`: calendar binning (s / min / h / day / week / month) + counted steps (`Counted(5, Minute)` → `5min` bins) with mean / sum / min / max / std
 - [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
 - [x] demo CLI: `moon run cli` — CSV in (argument), CSV out (stdout)
 
@@ -32,11 +32,13 @@ moon run cli                                  # built-in demo: resample + NaN ga
 moon run cli -- rolling 2 mean "1000,1.0
 2000,2.0"
 moon run cli -- resample d mean --ffill "$(cat series.csv)" > daily.csv
+moon run cli -- resample 5min sum "$(< busy_minutes.csv)"   # counted steps
 ```
 
 ## Design notes
 
 - Timestamps are UTC epoch milliseconds as `Int64` (MoonBit's `Int` is 32-bit); timezone handling is out of scope for v0. Week bins start on Monday.
+- Fixed-size bins share one formula, `t - floor_mod(t - anchor, step)`: simple frequencies are the step-1 case, counted frequencies scale the step, and `Month` is the only calendar (non-uniform) bucket, handled separately.
 - Values are `Double`; `NaN` marks a missing observation.
 - Zero third-party dependencies: pure MoonBit, runs on all backends.
 

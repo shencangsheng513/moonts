@@ -106,3 +106,25 @@ test "bad duration unit still raises Usage" {
     _ => fail("expected Usage for '2x'")
   }
 }
+
+///|
+test "resample accepts counted frequencies like 5min" {
+  let out = run(["resample", "5min", "sum", "0,1.0\n300000,2.0\n330000,4.0"]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let s = @moonts.Series::from_csv_string(out) catch {
+    e => fail("output not parseable: \{e}")
+  }
+  @test.assert_eq(s.ts, [0L, 300000L])
+  assert_doubles(s.values, [1.0, 6.0])
+}
+
+///|
+test "unknown counted frequency still raises Usage" {
+  try (run(["resample", "5me", "sum", "0,1.0\n1000,2.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for '5me'")
+  }
+}

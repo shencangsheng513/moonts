@@ -327,7 +327,25 @@ test "resample guards against corrupted ranges" {
 test "Frequency::from_string parses aliases, rejects unknown" {
   @test.assert_eq(@moonts.Frequency::from_string("min"), Some(@moonts.Minute))
   @test.assert_eq(@moonts.Frequency::from_string("D"), Some(@moonts.Day))
-  @test.assert_eq(@moonts.Frequency::from_string("5min"), None)
+  @test.assert_eq(
+    @moonts.Frequency::from_string("5min"),
+    Some(@moonts.Counted(5, @moonts.BasicFrequency::Minute)),
+  )
+  @test.assert_eq(@moonts.Frequency::from_string("ME"), Some(@moonts.Month))
+  @test.assert_eq(
+    @moonts.Frequency::from_string("2w"),
+    Some(@moonts.Counted(2, @moonts.BasicFrequency::Week)),
+  )
+  @test.assert_eq(
+    @moonts.Frequency::from_string("30S"),
+    Some(@moonts.Counted(30, @moonts.BasicFrequency::Second)),
+  )
+  // zero/negative counts and counted months have no sane meaning
+  @test.assert_eq(@moonts.Frequency::from_string("0min"), None)
+  @test.assert_eq(@moonts.Frequency::from_string("-3h"), None)
+  @test.assert_eq(@moonts.Frequency::from_string("2me"), None)
+  @test.assert_eq(@moonts.Frequency::from_string("5x"), None)
+  @test.assert_eq(@moonts.Frequency::from_string("min5"), None)
 }
 
 ///|
@@ -501,4 +519,53 @@ test "rolling_by rejects non-positive duration and unreachable min_periods" {
   } noraise {
     _ => fail("expected InvalidMinPeriods")
   }
+}
+
+///|
+test "resample(5min, sum) matches pandas resample('5min').sum()" {
+  let s = series_at([0, 300000, 330000], [1.0, 2.0, 4.0])
+  let five_min = @moonts.Counted(5, @moonts.BasicFrequency::Minute)
+  let got = s.resample(five_min, @moonts.Sum) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0, 300000])
+  assert_doubles_eq(got.values, [1.0, 6.0])
+}
+
+///|
+test "resample(2h, sum) bins on even epoch-hour boundaries" {
+  // pandas: points at 00:00, 01:00 fall in the 00:00-02:00 bin;
+  // the point at 02:00 opens the next bin
+  let s = series_at([0, 3600000, 7200000], [1.0, 2.0, 3.0])
+  let two_h = @moonts.Counted(2, @moonts.BasicFrequency::Hour)
+  let got = s.resample(two_h, @moonts.Sum) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0, 7200000])
+  assert_doubles_eq(got.values, [3.0, 3.0])
+}
+
+///|
+test "resample(5min, mean) fills interior gaps with NaN" {
+  let s = series_at([0, 900000], [2.0, 5.0])
+  let five_min = @moonts.Counted(5, @moonts.BasicFrequency::Minute)
+  let got = s.resample(five_min, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0, 300000, 600000, 900000])
+  assert_doubles_eq(got.values, [2.0, nan, nan, 5.0])
+}
+
+///|
+test "resample(2w, mean) keeps Monday-anchored two-week bins" {
+  // 2024-01-01 (Mon) and 2024-01-08 (Mon) are one week apart, so with a
+  // two-week step anchored on Mondays they land in different bins:
+  // [2023-12-25, 2024-01-08) and [2024-01-08, ...).
+  let s = series_at([1704067200000, 1704672000000], [3.0, 5.0])
+  let two_w = @moonts.Counted(2, @moonts.BasicFrequency::Week)
+  let got = s.resample(two_w, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [1703462400000, 1704672000000])
+  assert_doubles_eq(got.values, [3.0, 5.0])
 }

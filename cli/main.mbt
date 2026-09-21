@@ -16,7 +16,7 @@ impl Show for CliError with fn output(self : CliError, logger) {
 ///|
 
 ///|
-let usage : String = "moonts <command> [args...]\n  (no args) or `demo`  built-in demo pipeline\n  resample <freq> <agg> [--ffill] <csv>\n  rolling <count | duration> <agg> <csv>\nfreq: s | min | h | d | w | me\nagg:  mean | sum | min | max | std\nduration: <n><s|min|h|d|w>, e.g. 90min, 2h, 7d"
+let usage : String = "moonts <command> [args...]\n  (no args) or `demo`  built-in demo pipeline\n  resample <freq> <agg> [--ffill] <csv>\n  rolling <count | duration> <agg> <csv>\nfreq: s | min | h | d | w | me, or counted (5min, 2h, 30s, 7d, 2w)\nagg:  mean | sum | min | max | std\nduration: <n><s|min|h|d|w>, e.g. 90min, 2h, 7d"
 
 ///|
 fn parse_agg(s : String) -> @moonts.Agg raise CliError {
