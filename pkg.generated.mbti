@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shencangsheng513/moonts"
+
+// Values
+
+// Errors
+pub suberror SeriesError {
+  LengthMismatch(Int, Int)
+  Empty
+  NonIncreasingTimestamps
+}
+pub fn SeriesError::output(Self, &Logger) -> Unit
+pub fn SeriesError::to_string(Self) -> String
+pub impl Show for SeriesError
+
+// Types and methods
+pub struct Series {
+  ts : Array[Int]
+  values : Array[Double]
+}
+pub fn Series::new(Array[Int], Array[Double]) -> Self raise SeriesError
+
+// Type aliases
+
+// Traits
