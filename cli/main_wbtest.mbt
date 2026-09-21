@@ -128,3 +128,46 @@ test "unknown counted frequency still raises Usage" {
     _ => fail("expected Usage for '5me'")
   }
 }
+
+///|
+test "parse_agg covers min/max/std arms and rejects garbage" {
+  let csv = "0,3.0\n1000,5.0\n2000,7.0"
+  let mn = run(["rolling", "2", "min", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let mns = @moonts.Series::from_csv_string(mn) catch { e => fail("\{e}") }
+  assert_doubles(mns.values, [3.0, 3.0, 5.0])
+  let mx = run(["rolling", "2", "max", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let mxs = @moonts.Series::from_csv_string(mx) catch { e => fail("\{e}") }
+  assert_doubles(mxs.values, [3.0, 5.0, 7.0])
+  let sd = run(["rolling", "3", "std", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let sds = @moonts.Series::from_csv_string(sd) catch { e => fail("\{e}") }
+  // window [3,5,7]: mean 5, sq 4+0+4=8, var 8/2=4, std=2.0 exactly
+  @test.assert_eq(sds.values[2], 2.0)
+  try (run(["rolling", "2", "median", csv]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for bad agg")
+  }
+}
+
+///|
+test "duration head must be numeric: hh falls through to Usage" {
+  try (run(["rolling", "hh", "mean", "0,1.0\n1000,2.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for 'hh'")
+  }
+}
+
+///|
+test "CliError Show text is stable" {
+  let boom = "boom"
+  @test.assert_eq("\{Usage(boom)}", "usage error: boom")
+}
