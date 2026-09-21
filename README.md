@@ -11,7 +11,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [ ] `rolling`: duration-based windows
 - [x] `resample`: calendar binning (s / min / h / day / week / month) with mean / sum / min / max / std
 - [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
-- [ ] demo CLI: CSV in → resampled CSV out
+- [x] demo CLI: `moon run cli` — CSV in (argument), CSV out (stdout)
 
 ## Quick example
 
@@ -20,6 +20,18 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 // mismatched lengths, empty input, or non-increasing timestamps
 let s = Series::new([1000L, 2000L, 3000L], [1.0, 2.0, 3.0])
 s.rolling_mean(2, 1).values // [1.0, 1.5, 2.5]
+```
+
+## Try the CLI
+
+The core library deliberately has **no file API** (it stays runnable on every
+backend), so the CLI takes CSV text as an argument and writes CSV to stdout:
+
+```bash
+moon run cli                                  # built-in demo: resample + NaN gap
+moon run cli -- rolling 2 mean "1000,1.0
+2000,2.0"
+moon run cli -- resample d mean --ffill "$(cat series.csv)" > daily.csv
 ```
 
 ## Design notes
