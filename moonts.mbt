@@ -317,7 +317,7 @@ fn bucket_start(t : Int64, freq : Frequency) -> Int64 {
 }
 
 ///|
-fn next_bucket_start(start : Int64, freq : Frequency) -> Int64 {
+fn nxtbucket_start(start : Int64, freq : Frequency) -> Int64 {
   match freq {
     Second => start + 1000L
     Minute => start + 60000L
@@ -416,7 +416,7 @@ pub fn Series::resample(
       if out_ts.length() > max_bins {
         raise TooManyBins(out_ts.length())
       }
-      bin = next_bucket_start(bin, freq)
+      bin = nxtbucket_start(bin, freq)
     }
     let v = self.values[idx]
     if !v.is_nan() {
@@ -426,12 +426,88 @@ pub fn Series::resample(
   out_ts.push(bin)
   out_vals.push(finish_bucket(buf, agg))
   while bin != last_bin {
-    bin = next_bucket_start(bin, freq)
+    bin = nxtbucket_start(bin, freq)
     out_ts.push(bin)
     out_vals.push(nan)
     if out_ts.length() > max_bins {
       raise TooManyBins(out_ts.length())
     }
+  }
+  Series::{ ts: out_ts, values: out_vals, }
+}
+
+///|
+/// Forward-fill: replace each NaN with the last valid observation.
+///
+/// Leading NaNs have no earlier value to copy and stay NaN, exactly like
+/// pandas' `ffill`. The `limit` parameter is out of scope for v0.
+pub fn Series::ffill(self : Series) -> Series {
+  let out = self.values.copy()
+  let mut last : Double? = None
+  for i in 0..<out.length() {
+    if out[i].is_nan() {
+      match last {
+        Some(v) => out[i] = v
+        None => ()
+      }
+    } else {
+      last = Some(out[i])
+    }
+  }
+  Series::{ ts: self.ts.copy(), values: out, }
+}
+
+///|
+/// Backward-fill: replace each NaN with the next valid observation.
+///
+/// Trailing NaNs stay NaN (pandas `bfill` behavior).
+pub fn Series::bfill(self : Series) -> Series {
+  let out = self.values.copy()
+  let mut nxt : Double? = None
+  let n = out.length()
+  for i = n - 1; i >= 0; i = i - 1 {
+    if out[i].is_nan() {
+      match nxt {
+        Some(v) => out[i] = v
+        None => ()
+      }
+    } else {
+      nxt = Some(out[i])
+    }
+  }
+  Series::{ ts: self.ts.copy(), values: out, }
+}
+
+///|
+/// Replace every NaN with a fixed value, like pandas' `fillna(value)`.
+pub fn Series::fill_constant(self : Series, value : Double) -> Series {
+  let out = self.values.copy()
+  for i in 0..<out.length() {
+    if out[i].is_nan() {
+      out[i] = value
+    }
+  }
+  Series::{ ts: self.ts.copy(), values: out, }
+}
+
+///|
+/// Drop every NaN row, like pandas' `dropna`.
+///
+/// Raises Empty when the series is all-NaN: a Series is non-empty by
+/// invariant (see Series::new), and silently returning a zero-length series
+/// would let callers build one without going through validation.
+pub fn Series::drop_missing(self : Series) -> Series raise SeriesError {
+  let out_ts = Array(capacity=self.ts.length())
+  let out_vals = Array(capacity=self.values.length())
+  for i in 0..<self.values.length() {
+    let v = self.values[i]
+    if !v.is_nan() {
+      out_ts.push(self.ts[i])
+      out_vals.push(v)
+    }
+  }
+  if out_ts.length() == 0 {
+    raise Empty
   }
   Series::{ ts: out_ts, values: out_vals, }
 }

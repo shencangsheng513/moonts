@@ -329,3 +329,57 @@ test "Frequency::from_string parses aliases, rejects unknown" {
   @test.assert_eq(@moonts.Frequency::from_string("D"), Some(@moonts.Day))
   @test.assert_eq(@moonts.Frequency::from_string("5min"), None)
 }
+
+///|
+test "ffill propagates last valid value, keeps leading NaN" {
+  // pandas: pd.Series([1,None,None,4]).ffill() -> [1,1,1,4]
+  let got = series_of([1.0, nan, nan, 4.0]).ffill()
+  assert_doubles_eq(got.values, [1.0, 1.0, 1.0, 4.0])
+  // pandas: pd.Series([None,2,None]).ffill() -> [None,2,2]
+  let lead = series_of([nan, 2.0, nan]).ffill()
+  assert_doubles_eq(lead.values, [nan, 2.0, 2.0])
+}
+
+///|
+test "bfill propagates next valid value, keeps trailing NaN" {
+  // pandas: pd.Series([None,2,None,3]).bfill() -> [2,2,3,3]
+  let got = series_of([nan, 2.0, nan, 3.0]).bfill()
+  assert_doubles_eq(got.values, [2.0, 2.0, 3.0, 3.0])
+  // pandas: pd.Series([1,None]).bfill() -> [1,None]
+  let tail = series_of([1.0, nan]).bfill()
+  assert_doubles_eq(tail.values, [1.0, nan])
+}
+
+///|
+test "fill_constant replaces every NaN" {
+  let got = series_of([1.0, nan, nan]).fill_constant(0.0)
+  assert_doubles_eq(got.values, [1.0, 0.0, 0.0])
+}
+
+///|
+test "drop_missing removes NaN rows keeping alignment" {
+  let s = series_at([10L, 20L, 30L], [1.0, nan, 3.0])
+  let got = s.drop_missing() catch { e => fail("unexpected error: \{e}") }
+  @test.assert_eq(got.ts, [10L, 30L])
+  assert_doubles_eq(got.values, [1.0, 3.0])
+}
+
+///|
+test "drop_missing rejects all-NaN input to preserve the non-empty invariant" {
+  let s = series_of([nan, nan])
+  try (s.drop_missing() : @moonts.Series) catch {
+    @moonts.Empty => ()
+    e => fail("unexpected error: \{e}")
+  } noraise {
+    _ => fail("expected Empty")
+  }
+}
+
+///|
+test "resample then ffill closes gap buckets" {
+  let s = series_at([0, 172800000], [7.0, 9.0])
+  let r = s.resample(@moonts.Day, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  assert_doubles_eq(r.ffill().values, [7.0, 7.0, 9.0])
+}

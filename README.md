@@ -10,7 +10,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [x] `rolling` (count windows): `rolling_mean` / `sum` / `min` / `max` / `std` with `min_periods` semantics
 - [ ] `rolling`: duration-based windows
 - [x] `resample`: calendar binning (s / min / h / day / week / month) with mean / sum / min / max / std
-- [ ] fill strategies: forward / backward / constant / drop
+- [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
 - [ ] demo CLI: CSV in → resampled CSV out
 
 ## Quick example
@@ -18,7 +18,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 ```moonbit
 // timestamps: UTC epoch milliseconds; new(...) raises SeriesError on
 // mismatched lengths, empty input, or non-increasing timestamps
-let s = Series::new([1000, 2000, 3000], [1.0, 2.0, 3.0])
+let s = Series::new([1000L, 2000L, 3000L], [1.0, 2.0, 3.0])
 s.rolling_mean(2, 1).values // [1.0, 1.5, 2.5]
 ```
 
