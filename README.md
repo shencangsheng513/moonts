@@ -1,5 +1,7 @@
 # MoonTS
 
+[![CI](https://github.com/shencangsheng513/moonts/actions/workflows/ci.yml/badge.svg)](https://github.com/shencangsheng513/moonts/actions/workflows/ci.yml)
+
 Time-series transformation library for [MoonBit](https://www.moonbitlang.com): rolling windows, calendar resampling, and fill strategies — the pandas-style primitives the MoonBit ecosystem is missing.
 
 > 🚧 WIP — 2026 MoonBit Hackathon (September edition) entry. This repository is developed in the open; see the issue tracker for the build plan.
