@@ -1,4 +1,11 @@
 ///|
+/// The missing-observation marker: a quiet NaN.
+///
+/// Series carry NaN where an observation is absent; rolling aggregates skip
+/// it, and the fill strategies in this library key off it.
+pub let nan : Double = @double.not_a_number
+
+///|
 pub suberror SeriesError {
   LengthMismatch(Int, Int)
   Empty
@@ -51,4 +58,97 @@ pub fn Series::new(
     }
   }
   Series::{ ts, values, }
+}
+
+///|
+pub suberror RollingError {
+  InvalidWindow(Int)
+  InvalidMinPeriods(Int)
+}
+
+///|
+pub impl Show for RollingError with fn output(self : RollingError, logger) {
+  match self {
+    InvalidWindow(w) =>
+      logger.write_string("window must be at least 1, got \{w}")
+    InvalidMinPeriods(m) =>
+      logger.write_string("min_periods must satisfy 1 <= m <= window, got \{m}")
+  }
+}
+
+///|
+pub extend RollingError with Show::{to_string, output}
+
+///|
+/// Shared engine for count-based rolling aggregations.
+///
+/// Output position i covers input positions (i - window + 1) to i, clipped
+/// at the start of the series (windows do not extend before data begins).
+/// `agg` receives only the non-NaN observations of each window; a window
+/// with fewer than `min_periods` of them yields NaN.
+///
+/// O(n * window) by design: batch workloads here stay far below the size
+/// where running-sum tricks pay off in readability.
+fn Series::rolling_agg(
+  self : Series,
+  window : Int,
+  min_periods : Int,
+  agg : (Array[Double]) -> Double,
+) -> Series raise RollingError {
+  if window < 1 {
+    raise InvalidWindow(window)
+  }
+  if min_periods < 1 || min_periods > window {
+    raise InvalidMinPeriods(min_periods)
+  }
+  let n = self.values.length()
+  let out = Array(capacity=n)
+  let buf = Array(capacity=window)
+  for i = 0; i < n; i = i + 1 {
+    buf.clear()
+    let start = if i - window + 1 < 0 { 0 } else { i - window + 1 }
+    for j = start; j <= i; j = j + 1 {
+      let v = self.values[j]
+      if !v.is_nan() {
+        buf.push(v)
+      }
+    }
+    out.push(if buf.length() >= min_periods { agg(buf) } else { nan })
+  }
+  Series::{ ts: self.ts.copy(), values: out, }
+}
+
+///|
+/// Rolling mean over count-based windows, pandas-compatible NaN skipping.
+///
+/// Example: values [1.0, 2.0, 3.0, 4.0] with window=2, min_periods=2
+/// produce [nan, 1.5, 2.5, 3.5].
+pub fn Series::rolling_mean(
+  self : Series,
+  window : Int,
+  min_periods : Int,
+) -> Series raise RollingError {
+  self.rolling_agg(window, min_periods, buf => {
+    let mut acc = 0.0
+    for v in buf {
+      acc = acc + v
+    }
+    acc / buf.length().to_double()
+  })
+}
+
+///|
+/// Rolling sum over count-based windows; NaN observations are skipped.
+pub fn Series::rolling_sum(
+  self : Series,
+  window : Int,
+  min_periods : Int,
+) -> Series raise RollingError {
+  self.rolling_agg(window, min_periods, buf => {
+    let mut acc = 0.0
+    for v in buf {
+      acc = acc + v
+    }
+    acc
+  })
 }

@@ -2,8 +2,17 @@
 package "shencangsheng513/moonts"
 
 // Values
+pub let nan : Double
 
 // Errors
+pub suberror RollingError {
+  InvalidWindow(Int)
+  InvalidMinPeriods(Int)
+}
+pub fn RollingError::output(Self, &Logger) -> Unit
+pub fn RollingError::to_string(Self) -> String
+pub impl Show for RollingError
+
 pub suberror SeriesError {
   LengthMismatch(Int, Int)
   Empty
@@ -19,6 +28,8 @@ pub struct Series {
   values : Array[Double]
 }
 pub fn Series::new(Array[Int], Array[Double]) -> Self raise SeriesError
+pub fn Series::rolling_mean(Self, Int, Int) -> Self raise RollingError
+pub fn Series::rolling_sum(Self, Int, Int) -> Self raise RollingError
 
 // Type aliases
 
