@@ -9,7 +9,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [x] `Series`: aligned (timestamp, value) columns with strict-increasing validation
 - [x] `rolling` (count windows): `rolling_mean` / `sum` / `min` / `max` / `std` with `min_periods` semantics
 - [ ] `rolling`: duration-based windows
-- [ ] `resample`: calendar binning (s / min / h / day / week / month) with downcast aggregations
+- [x] `resample`: calendar binning (s / min / h / day / week / month) with mean / sum / min / max / std
 - [ ] fill strategies: forward / backward / constant / drop
 - [ ] demo CLI: CSV in → resampled CSV out
 
@@ -24,7 +24,7 @@ s.rolling_mean(2, 1).values // [1.0, 1.5, 2.5]
 
 ## Design notes
 
-- Timestamps are UTC epoch milliseconds (`Int`); timezone handling is out of scope for v0.
+- Timestamps are UTC epoch milliseconds as `Int64` (MoonBit's `Int` is 32-bit); timezone handling is out of scope for v0. Week bins start on Monday.
 - Values are `Double`; `NaN` marks a missing observation.
 - Zero third-party dependencies: pure MoonBit, runs on all backends.
 

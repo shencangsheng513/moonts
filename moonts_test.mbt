@@ -43,7 +43,7 @@ fn series_of(values : Array[Double]) -> @moonts.Series raise {
   let n = values.length()
   let ts = Array(capacity=n)
   for i = 0; i < n; i = i + 1 {
-    ts.push(i)
+    ts.push(i.to_int64())
   }
   @moonts.Series::new(ts, values) catch {
     e => fail("unexpected error: \{e}")
@@ -239,4 +239,93 @@ test "rolling rejects min_periods out of range" {
   } noraise {
     _ => @test.fail("expected InvalidMinPeriods")
   }
+}
+
+///|
+fn series_at(ts : Array[Int64], values : Array[Double]) -> @moonts.Series raise {
+  @moonts.Series::new(ts, values) catch {
+    e => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "resample(day, mean) bins points by UTC calendar day" {
+  let s = series_at([0, 3600000, 7200000, 86400000], [1.0, 2.0, 3.0, 10.0])
+  let got = s.resample(@moonts.Day, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0, 86400000])
+  assert_doubles_eq(got.values, [2.0, 10.0])
+}
+
+///|
+test "resample emits NaN for empty buckets inside the range" {
+  // pandas: two daily points one day apart produce three bins, middle NaN
+  let s = series_at([0, 172800000], [7.0, 9.0])
+  let got = s.resample(@moonts.Day, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0, 86400000, 172800000])
+  assert_doubles_eq(got.values, [7.0, nan, 9.0])
+}
+
+///|
+test "resample(minute, sum) matches pandas resample('1min').sum()" {
+  let s = series_at([0, 30000, 60000, 90000], [1.0, 2.0, 3.0, 4.0])
+  let got = s.resample(@moonts.Minute, @moonts.Sum) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0, 60000])
+  assert_doubles_eq(got.values, [3.0, 7.0])
+}
+
+///|
+test "resample(month) handles a year boundary" {
+  // 2024-12-01T00:00:05Z and 2025-01-01T00:00:00Z (epoch ms via pandas)
+  let s = series_at([1733011205000, 1735689600000], [5.0, 6.0])
+  let got = s.resample(@moonts.Month, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [1733011200000, 1735689600000])
+  assert_doubles_eq(got.values, [5.0, 6.0])
+}
+
+///|
+test "resample(week) bins to Monday starts" {
+  // 2026-09-20 is a Sunday -> week of Mon 2026-09-14;
+  // 2026-09-23 is a Wednesday -> week of Mon 2026-09-21.
+  let s = series_at([1789862400000, 1790121600000], [1.0, 2.0])
+  let got = s.resample(@moonts.Week, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [1789344000000, 1789948800000])
+  assert_doubles_eq(got.values, [1.0, 2.0])
+}
+
+///|
+test "resample skips NaN inside buckets and supports Std" {
+  let s = series_at([0, 1000, 2000], [2.0, nan, 4.0])
+  let got = s.resample(@moonts.Day, @moonts.Std) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [0])
+  assert_doubles_close(got.values, [1.4142135623730951], 0.000000001)
+}
+
+///|
+test "resample guards against corrupted ranges" {
+  // 1970 -> ~year 953,000 at month frequency exceeds ten million bins
+  let s = series_at([0L, 30000000000000000L], [1.0, 2.0])
+  try (s.resample(@moonts.Month, @moonts.Mean) : @moonts.Series) catch {
+    @moonts.TooManyBins(_) => ()
+  } noraise {
+    _ => fail("expected TooManyBins")
+  }
+}
+
+///|
+test "Frequency::from_string parses aliases, rejects unknown" {
+  @test.assert_eq(@moonts.Frequency::from_string("min"), Some(@moonts.Minute))
+  @test.assert_eq(@moonts.Frequency::from_string("D"), Some(@moonts.Day))
+  @test.assert_eq(@moonts.Frequency::from_string("5min"), None)
 }
