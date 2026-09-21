@@ -383,3 +383,78 @@ test "resample then ffill closes gap buckets" {
   }
   assert_doubles_eq(r.ffill().values, [7.0, 7.0, 9.0])
 }
+
+///|
+test "from_csv_string parses plain rows" {
+  let s = @moonts.Series::from_csv_string("1000,1.0\n2000,2.5\n3000,4.0") catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(s.ts, [1000L, 2000L, 3000L])
+  assert_doubles_eq(s.values, [1.0, 2.5, 4.0])
+}
+
+///|
+test "from_csv_string skips auto-detected header and reads NaN cells" {
+  let s = @moonts.Series::from_csv_string(
+    "timestamp,value\n1000,1.0\n2000,\n3000,NaN",
+  ) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(s.ts, [1000L, 2000L, 3000L])
+  assert_doubles_eq(s.values, [1.0, nan, nan])
+}
+
+///|
+test "from_csv_string tolerates CRLF, blank lines, and padded fields" {
+  let s = @moonts.Series::from_csv_string(
+    "\r\ntimestamp,value\r\n1000 , 1.0\r\n\r\n2000,2.0\r\n",
+  ) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(s.ts, [1000L, 2000L])
+  assert_doubles_eq(s.values, [1.0, 2.0])
+}
+
+///|
+test "from_csv_string reports the 1-based line number of malformed rows" {
+  try
+    (@moonts.Series::from_csv_string("1000,1.0\nbroken") : @moonts.Series)
+  catch {
+    @moonts.Malformed(2, _) => ()
+    e => fail("unexpected error: \{e}")
+  } noraise {
+    _ => fail("expected Malformed on line 2")
+  }
+}
+
+///|
+test "blank csv raises Empty and unsorted rows raise NonIncreasing" {
+  try (@moonts.Series::from_csv_string("") : @moonts.Series) catch {
+    @moonts.Empty => ()
+    e => fail("unexpected error: \{e}")
+  } noraise {
+    _ => fail("expected Empty")
+  }
+  try
+    (@moonts.Series::from_csv_string("2000,1.0\n1000,2.0") : @moonts.Series)
+  catch {
+    @moonts.NonIncreasingTimestamps => ()
+    e => fail("unexpected error: \{e}")
+  } noraise {
+    _ => fail("expected NonIncreasingTimestamps")
+  }
+}
+
+///|
+test "to_csv_string round-trips through from_csv_string" {
+  let s = series_at([1000L, 2000L, 3000L], [1.0, nan, 3.0])
+  let text = s.to_csv_string()
+  if !text.has_prefix("timestamp,value\n") {
+    fail("to_csv_string must start with the header row")
+  }
+  let back = @moonts.Series::from_csv_string(text) catch {
+    e => fail("round-trip parse failed: \{e}")
+  }
+  @test.assert_eq(back.ts, s.ts)
+  assert_doubles_eq(back.values, s.values)
+}
