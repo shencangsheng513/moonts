@@ -7,8 +7,8 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 ## Status
 
 - [x] `Series`: aligned (timestamp, value) columns with strict-increasing validation
-- [x] `rolling` (count windows): `rolling_mean` / `rolling_sum` with `min_periods` semantics
-- [ ] `rolling`: min / max / std aggregations, duration-based windows
+- [x] `rolling` (count windows): `rolling_mean` / `sum` / `min` / `max` / `std` with `min_periods` semantics
+- [ ] `rolling`: duration-based windows
 - [ ] `resample`: calendar binning (s / min / h / day / week / month) with downcast aggregations
 - [ ] fill strategies: forward / backward / constant / drop
 - [ ] demo CLI: CSV in → resampled CSV out

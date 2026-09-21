@@ -28,7 +28,10 @@ pub struct Series {
   values : Array[Double]
 }
 pub fn Series::new(Array[Int], Array[Double]) -> Self raise SeriesError
+pub fn Series::rolling_max(Self, Int, Int) -> Self raise RollingError
 pub fn Series::rolling_mean(Self, Int, Int) -> Self raise RollingError
+pub fn Series::rolling_min(Self, Int, Int) -> Self raise RollingError
+pub fn Series::rolling_std(Self, Int, Int) -> Self raise RollingError
 pub fn Series::rolling_sum(Self, Int, Int) -> Self raise RollingError
 
 // Type aliases

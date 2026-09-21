@@ -152,3 +152,68 @@ pub fn Series::rolling_sum(
     acc
   })
 }
+
+///|
+/// Rolling minimum over count-based windows.
+pub fn Series::rolling_min(
+  self : Series,
+  window : Int,
+  min_periods : Int,
+) -> Series raise RollingError {
+  self.rolling_agg(window, min_periods, buf => {
+    let mut m = buf[0]
+    for v in buf {
+      if v < m {
+        m = v
+      }
+    }
+    m
+  })
+}
+
+///|
+/// Rolling maximum over count-based windows.
+pub fn Series::rolling_max(
+  self : Series,
+  window : Int,
+  min_periods : Int,
+) -> Series raise RollingError {
+  self.rolling_agg(window, min_periods, buf => {
+    let mut m = buf[0]
+    for v in buf {
+      if v > m {
+        m = v
+      }
+    }
+    m
+  })
+}
+
+///|
+/// Rolling standard deviation, matching pandas' default `ddof=1`
+/// (sample std). A window with fewer than two valid observations has an
+/// undefined sample std and yields NaN even when min_periods is 1.
+pub fn Series::rolling_std(
+  self : Series,
+  window : Int,
+  min_periods : Int,
+) -> Series raise RollingError {
+  self.rolling_agg(window, min_periods, buf => {
+    let n = buf.length()
+    if n < 2 {
+      nan
+    } else {
+      let mut sum = 0.0
+      for v in buf {
+        sum = sum + v
+      }
+      let mean = sum / n.to_double()
+      let mut sq = 0.0
+      for v in buf {
+        let d = v - mean
+        sq = sq + d * d
+      }
+      (sq / (n - 1).to_double()).sqrt()
+    }
+  })
+}
