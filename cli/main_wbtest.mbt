@@ -83,3 +83,26 @@ fn assert_doubles(got : Array[Double], want : Array[Double]) -> Unit raise {
     }
   }
 }
+
+///|
+test "rolling accepts duration windows like 2h" {
+  let out = run(["rolling", "2h", "mean", "0,1.0\n3600000,2.0\n7200000,3.0"]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let s = @moonts.Series::from_csv_string(out) catch {
+    e => fail("output not parseable: \{e}")
+  }
+  // ts 0 is exactly 2h older than ts 7200000, so the last window is
+  // just (2.0, 3.0) -> 2.5
+  assert_doubles(s.values, [1.0, 1.5, 2.5])
+}
+
+///|
+test "bad duration unit still raises Usage" {
+  try (run(["rolling", "2x", "mean", "0,1.0\n1000,2.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for '2x'")
+  }
+}

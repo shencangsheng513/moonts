@@ -64,6 +64,7 @@ pub fn Series::new(
 ///|
 pub suberror RollingError {
   InvalidWindow(Int)
+  InvalidWindowMs(Int64)
   InvalidMinPeriods(Int)
 }
 
@@ -72,6 +73,8 @@ pub impl Show for RollingError with fn output(self : RollingError, logger) {
   match self {
     InvalidWindow(w) =>
       logger.write_string("window must be at least 1, got \{w}")
+    InvalidWindowMs(w) =>
+      logger.write_string("duration window must be at least 1 ms, got \{w}")
     InvalidMinPeriods(m) =>
       logger.write_string("min_periods must satisfy 1 <= m <= window, got \{m}")
   }
@@ -172,6 +175,54 @@ pub fn Series::rolling_std(
   min_periods : Int,
 ) -> Series raise RollingError {
   self.rolling_agg(window, min_periods, buf => agg_values(buf, Std))
+}
+
+///|
+/// Rolling aggregation over duration windows in milliseconds, matching
+/// pandas' `rolling('2h')`: the window at position i covers observations
+/// with timestamps in `(ts[i] - window_ms, ts[i]]` (half-open, so a point
+/// exactly `window_ms` older is excluded). Window bounds use a monotone
+/// two-pointer scan; aggregation shares `agg_values` with count windows,
+/// so NaN skipping and `min_periods` semantics are identical.
+///
+/// `min_periods` must lie within `1..=number of rows` (there is no fixed
+/// per-position window size to bound it more tightly).
+pub fn Series::rolling_by(
+  self : Series,
+  window_ms : Int64,
+  min_periods : Int,
+  agg : Agg,
+) -> Series raise RollingError {
+  let n = self.values.length()
+  if window_ms < 1L {
+    raise InvalidWindowMs(window_ms)
+  }
+  if min_periods < 1 || min_periods > n {
+    raise InvalidMinPeriods(min_periods)
+  }
+  let out = Array(capacity=n)
+  let buf = Array(capacity=n)
+  let mut lo = 0
+  for i = 0; i < n; i = i + 1 {
+    while self.ts[i] - self.ts[lo] >= window_ms {
+      lo = lo + 1
+    }
+    buf.clear()
+    for j = lo; j <= i; j = j + 1 {
+      let v = self.values[j]
+      if !v.is_nan() {
+        buf.push(v)
+      }
+    }
+    out.push(
+      if buf.length() >= min_periods {
+        agg_values(buf, agg)
+      } else {
+        nan
+      },
+    )
+  }
+  Series::{ ts: self.ts.copy(), values: out, }
 }
 
 ///|

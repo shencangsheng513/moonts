@@ -8,7 +8,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 
 - [x] `Series`: aligned (timestamp, value) columns with strict-increasing validation
 - [x] `rolling` (count windows): `rolling_mean` / `sum` / `min` / `max` / `std` with `min_periods` semantics
-- [ ] `rolling`: duration-based windows
+- [x] `rolling`: duration-based windows via `rolling_by(window_ms, min_periods, agg)` (half-open, pandas-compatible)
 - [x] `resample`: calendar binning (s / min / h / day / week / month) with mean / sum / min / max / std
 - [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
 - [x] demo CLI: `moon run cli` — CSV in (argument), CSV out (stdout)

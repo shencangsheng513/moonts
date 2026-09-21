@@ -458,3 +458,47 @@ test "to_csv_string round-trips through from_csv_string" {
   @test.assert_eq(back.ts, s.ts)
   assert_doubles_eq(back.values, s.values)
 }
+
+///|
+test "rolling_by matches pandas rolling('2h'): half-open duration windows" {
+  // pandas: Series([1,2,3,4], index=ts).rolling('2000ms').mean()
+  // ts 0 is exactly 2000ms older than ts 2000 (excluded), and likewise
+  // ts 2000 at t=4000, leaving that final window one observation.
+  let s = series_at([0L, 1000L, 2000L, 4000L], [1.0, 2.0, 3.0, 4.0])
+  let got = s.rolling_by(2000L, 1, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  assert_doubles_eq(got.values, [1.0, 1.5, 2.5, 4.0])
+}
+
+///|
+test "rolling_by skips NaN and keeps min_periods semantics" {
+  let s = series_at([0L, 1000L, 2000L], [1.0, nan, 3.0])
+  let g1 = s.rolling_by(2000L, 1, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  assert_doubles_eq(g1.values, [1.0, 1.0, 3.0])
+  let g2 = s.rolling_by(2000L, 2, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  // only the first window holds two valid observations (1.0 and nan -> one
+  // valid at ts 0 is alone; at ts 1000 both ts 0 and 1000 are inside)
+  assert_doubles_eq(g2.values, [nan, nan, nan])
+}
+
+///|
+test "rolling_by rejects non-positive duration and unreachable min_periods" {
+  let s = series_at([0L, 1000L], [1.0, 2.0])
+  try (s.rolling_by(0L, 1, @moonts.Mean) : @moonts.Series) catch {
+    @moonts.InvalidWindowMs(0L) => ()
+    e => fail("expected InvalidWindowMs(0), got \{e}")
+  } noraise {
+    _ => fail("expected InvalidWindowMs")
+  }
+  try (s.rolling_by(1000L, 3, @moonts.Mean) : @moonts.Series) catch {
+    @moonts.InvalidMinPeriods(3) => ()
+    e => fail("expected InvalidMinPeriods(3), got \{e}")
+  } noraise {
+    _ => fail("expected InvalidMinPeriods")
+  }
+}

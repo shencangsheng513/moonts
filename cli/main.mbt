@@ -16,7 +16,7 @@ impl Show for CliError with fn output(self : CliError, logger) {
 ///|
 
 ///|
-let usage : String = "moonts <command> [args...]\n  (no args) or `demo`  built-in demo pipeline\n  resample <freq> <agg> [--ffill] <csv>\n  rolling <window> <agg> <csv>\nfreq: s | min | h | d | w | me\nagg:  mean | sum | min | max | std"
+let usage : String = "moonts <command> [args...]\n  (no args) or `demo`  built-in demo pipeline\n  resample <freq> <agg> [--ffill] <csv>\n  rolling <count | duration> <agg> <csv>\nfreq: s | min | h | d | w | me\nagg:  mean | sum | min | max | std\nduration: <n><s|min|h|d|w>, e.g. 90min, 2h, 7d"
 
 ///|
 fn parse_agg(s : String) -> @moonts.Agg raise CliError {
@@ -39,6 +39,28 @@ fn parse_freq(s : String) -> @moonts.Frequency raise CliError {
 }
 
 ///|
+/// `30min` -> 1800000 ms and friends; None means "not a duration",
+/// letting the caller fall back to a plain count window.
+fn parse_duration_ms(s : String) -> Int64? {
+  let lower = s.to_lower()
+  let units = [
+    ("min", 60000L),
+    ("s", 1000L),
+    ("h", 3600000L),
+    ("d", 86400000L),
+    ("w", 604800000L),
+  ]
+  for (suffix, ms) in units {
+    if lower.has_suffix(suffix) {
+      let head = lower[:lower.length() - suffix.length()]
+      let count = Some(@string.FromStr::from_str(head)) catch { _ => None }
+      return count.map(n => n * ms)
+    }
+  }
+  None
+}
+
+///|
 fn demo_csv() -> String raise {
   let input = "timestamp,value\n0,1.0\n3600000,2.0\n7200000,3.0\n172800000,9.0\n176400000,11.0"
   let s = @moonts.Series::from_csv_string(input)
@@ -51,19 +73,27 @@ fn run(argv : Array[String]) -> String raise {
     0 => demo_csv()
     1 if argv[0] == "demo" => demo_csv()
     n if n >= 4 && argv[0] == "rolling" => {
-      let window = @string.FromStr::from_str(argv[1][:]) catch {
-        _ => raise Usage("bad window '\{argv[1]}', expected a positive int")
-      }
       let agg = parse_agg(argv[2])
       let s = @moonts.Series::from_csv_string(argv[3])
-      let out = match agg {
-        @moonts.Mean => s.rolling_mean(window, 1)
-        @moonts.Sum => s.rolling_sum(window, 1)
-        @moonts.Min => s.rolling_min(window, 1)
-        @moonts.Max => s.rolling_max(window, 1)
-        @moonts.Std => s.rolling_std(window, 1)
+      match parse_duration_ms(argv[1]) {
+        Some(ms) => s.rolling_by(ms, 1, agg).to_csv_string()
+        None => {
+          let window = @string.FromStr::from_str(argv[1][:]) catch {
+            _ =>
+              raise Usage(
+                "bad window '\{argv[1]}': expected a positive int or a duration like 30min/2h/7d",
+              )
+          }
+          let out = match agg {
+            @moonts.Mean => s.rolling_mean(window, 1)
+            @moonts.Sum => s.rolling_sum(window, 1)
+            @moonts.Min => s.rolling_min(window, 1)
+            @moonts.Max => s.rolling_max(window, 1)
+            @moonts.Std => s.rolling_std(window, 1)
+          }
+          out.to_csv_string()
+        }
       }
-      out.to_csv_string()
     }
     n if n >= 4 && argv[0] == "resample" => {
       let (csv_at, ffill) = if n == 4 {
