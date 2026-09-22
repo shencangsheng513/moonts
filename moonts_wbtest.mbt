@@ -35,3 +35,23 @@ test "error Show texts are stable user-facing strings" {
     "line 7: expected 'ms,value', got 'x,y,z'",
   )
 }
+
+///|
+test "ewm error Show texts are stable user-facing strings" {
+  @test.assert_eq(
+    AlphaOutOfRange(0.0).to_string(),
+    "alpha must satisfy 0 < a <= 1, got 0",
+  )
+  @test.assert_eq(
+    SpanTooSmall(0.5).to_string(),
+    "span must be at least 1, got 0.5",
+  )
+  @test.assert_eq(
+    HalflifeNotPositive(0.0).to_string(),
+    "halflife must be positive, got 0",
+  )
+  @test.assert_eq(
+    ComNegative(-1.0).to_string(),
+    "com must be at least 0, got -1",
+  )
+}

@@ -16,6 +16,16 @@ pub fn CsvError::output(Self, &Logger) -> Unit
 pub fn CsvError::to_string(Self) -> String
 pub impl Show for CsvError
 
+pub suberror EwmError {
+  AlphaOutOfRange(Double)
+  SpanTooSmall(Double)
+  HalflifeNotPositive(Double)
+  ComNegative(Double)
+}
+pub fn EwmError::output(Self, &Logger) -> Unit
+pub fn EwmError::to_string(Self) -> String
+pub impl Show for EwmError
+
 pub suberror ResampleError {
   TooManyBins(Int)
 }
@@ -64,6 +74,16 @@ pub fn BasicFrequency::equal(Self, Self) -> Bool
 pub fn BasicFrequency::not_equal(Self, Self) -> Bool
 pub fn BasicFrequency::to_repr(Self) -> @debug.Repr
 
+pub(all) enum Decay {
+  Alpha(Double)
+  Span(Double)
+  Halflife(Double)
+  Com(Double)
+} derive(Eq, @debug.Debug)
+pub fn Decay::equal(Self, Self) -> Bool
+pub fn Decay::not_equal(Self, Self) -> Bool
+pub fn Decay::to_repr(Self) -> @debug.Repr
+
 pub(all) enum Frequency {
   Second
   Minute
@@ -84,6 +104,7 @@ pub struct Series {
 }
 pub fn Series::bfill(Self) -> Self
 pub fn Series::drop_missing(Self) -> Self raise SeriesError
+pub fn Series::ewm_mean(Self, Decay, Bool, Bool) -> Self raise EwmError
 pub fn Series::ffill(Self) -> Self
 pub fn Series::fill_constant(Self, Double) -> Self
 pub fn Series::from_csv_string(String) -> Self raise

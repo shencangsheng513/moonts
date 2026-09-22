@@ -581,3 +581,177 @@ test "resample buckets pre-epoch timestamps with floor semantics" {
   @test.assert_eq(got.ts, [-86400000, 0])
   assert_doubles_eq(got.values, [1.0, 2.0])
 }
+
+///|
+/// pandas 2.3.3 `ewm` ground truth. Binary-exact rows use assert_doubles_eq;
+/// rows whose pandas values are recurring decimals or exp() results use a
+/// tolerance because pandas' Cython loop can differ in the last ulp.
+fn ewm_mean_of(
+  s : @moonts.Series,
+  d : @moonts.Decay,
+  adjust : Bool,
+  ignore_na : Bool,
+) -> @moonts.Series raise {
+  s.ewm_mean(d, adjust, ignore_na) catch {
+    e => fail("unexpected ewm error: \{e}")
+  }
+}
+
+///|
+let half : @moonts.Decay = @moonts.Alpha(0.5)
+
+///|
+test "ewm_mean adjust=false, alpha=0.5 on [1,2,3] (pandas)" {
+  let got = ewm_mean_of(series_of([1.0, 2.0, 3.0]), half, false, false)
+  assert_doubles_eq(got.values, [1.0, 1.5, 2.25])
+}
+
+///|
+test "ewm_mean adjust=true, alpha=0.5 on [1,2,3] (pandas)" {
+  let got = ewm_mean_of(series_of([1.0, 2.0, 3.0]), half, true, false)
+  assert_doubles_close(
+    got.values,
+    [1.0, 1.6666666666666667, 2.4285714285714284],
+    0.000000001,
+  )
+}
+
+///|
+test "ewm_mean one-NaN gap, all four adjust/ignore_na combinations (pandas)" {
+  let s = series_of([1.0, nan, 3.0])
+  assert_doubles_close(
+    ewm_mean_of(s, half, true, false).values,
+    [1.0, 1.0, 2.6],
+    0.000000001,
+  )
+  assert_doubles_close(
+    ewm_mean_of(s, half, true, true).values,
+    [1.0, 1.0, 2.3333333333333335],
+    0.000000001,
+  )
+  assert_doubles_close(
+    ewm_mean_of(s, half, false, false).values,
+    [1.0, 1.0, 2.3333333333333335],
+    0.000000001,
+  )
+  assert_doubles_eq(ewm_mean_of(s, half, false, true).values, [1.0, 1.0, 2.0])
+}
+
+///|
+test "ewm_mean two-NaN gap, all four combinations (pandas)" {
+  let s = series_of([1.0, nan, nan, 5.0])
+  assert_doubles_close(
+    ewm_mean_of(s, half, true, false).values,
+    [1.0, 1.0, 1.0, 4.555555555555555],
+    0.000000001,
+  )
+  assert_doubles_close(
+    ewm_mean_of(s, half, true, true).values,
+    [1.0, 1.0, 1.0, 3.6666666666666665],
+    0.000000001,
+  )
+  assert_doubles_eq(ewm_mean_of(s, half, false, false).values, [
+    1.0, 1.0, 1.0, 4.2,
+  ])
+  assert_doubles_eq(ewm_mean_of(s, half, false, true).values, [
+    1.0, 1.0, 1.0, 3.0,
+  ])
+}
+
+///|
+test "ewm_mean leading NaN stays NaN (pandas)" {
+  let s = series_of([nan, 2.0, 4.0])
+  assert_doubles_close(
+    ewm_mean_of(s, half, true, false).values,
+    [nan, 2.0, 3.3333333333333335],
+    0.000000001,
+  )
+  assert_doubles_eq(ewm_mean_of(s, half, false, false).values, [nan, 2.0, 3.0])
+}
+
+///|
+test "ewm_mean trailing NaN carries the last mean forward (pandas)" {
+  let s = series_of([1.0, 2.0, nan])
+  assert_doubles_close(
+    ewm_mean_of(s, half, true, false).values,
+    [1.0, 1.6666666666666667, 1.6666666666666667],
+    0.000000001,
+  )
+  assert_doubles_eq(ewm_mean_of(s, half, false, false).values, [1.0, 1.5, 1.5])
+}
+
+///|
+test "ewm_mean halflife=2 matches pandas, alpha = 1 - exp(-ln2/h)" {
+  let got = ewm_mean_of(
+    series_of([1.0, 2.0, 3.0]),
+    @moonts.Halflife(2.0),
+    true,
+    false,
+  )
+  assert_doubles_close(
+    got.values,
+    [1.0, 1.585786437626905, 2.2265409196609864],
+    0.000000001,
+  )
+}
+
+///|
+test "span=3 is exactly alpha=0.5; com=1 is exactly alpha=0.5 (pandas)" {
+  let s = series_of([1.0, 2.0, 3.0])
+  let want = ewm_mean_of(s, half, true, false).values
+  assert_doubles_eq(ewm_mean_of(s, @moonts.Span(3.0), true, false).values, want)
+  assert_doubles_eq(ewm_mean_of(s, @moonts.Com(1.0), true, false).values, want)
+}
+
+///|
+test "ewm_mean preserves the input timestamps" {
+  let s = series_at([1000, 2000, 4000], [1.0, 2.0, 3.0])
+  let got = ewm_mean_of(s, half, false, false)
+  @test.assert_eq(got.ts, [1000L, 2000L, 4000L])
+}
+
+///|
+test "ewm decay validation rejects out-of-range parameters" {
+  let s = series_of([1.0, 2.0])
+  try s.ewm_mean(@moonts.Alpha(0.0), true, false) catch {
+    @moonts.AlphaOutOfRange(_) => ()
+    e => fail("expected AlphaOutOfRange, got \{e}")
+  } noraise {
+    _ => fail("expected AlphaOutOfRange for 0.0")
+  }
+  try s.ewm_mean(@moonts.Span(0.5), true, false) catch {
+    @moonts.SpanTooSmall(_) => ()
+    e => fail("expected SpanTooSmall, got \{e}")
+  } noraise {
+    _ => fail("expected SpanTooSmall for 0.5")
+  }
+  try s.ewm_mean(@moonts.Halflife(0.0), true, false) catch {
+    @moonts.HalflifeNotPositive(_) => ()
+    e => fail("expected HalflifeNotPositive, got \{e}")
+  } noraise {
+    _ => fail("expected HalflifeNotPositive for 0.0")
+  }
+  try s.ewm_mean(@moonts.Com(-1.0), true, false) catch {
+    @moonts.ComNegative(_) => ()
+    e => fail("expected ComNegative, got \{e}")
+  } noraise {
+    _ => fail("expected ComNegative for -1.0")
+  }
+}
+
+///|
+test "ewm alpha NaN and >1 both raise AlphaOutOfRange" {
+  let s = series_of([1.0, 2.0])
+  try s.ewm_mean(@moonts.Alpha(nan), true, false) catch {
+    @moonts.AlphaOutOfRange(_) => ()
+    e => fail("expected AlphaOutOfRange for NaN, got \{e}")
+  } noraise {
+    _ => fail("expected AlphaOutOfRange for NaN")
+  }
+  try s.ewm_mean(@moonts.Alpha(1.5), true, false) catch {
+    @moonts.AlphaOutOfRange(_) => ()
+    e => fail("expected AlphaOutOfRange for 1.5, got \{e}")
+  } noraise {
+    _ => fail("expected AlphaOutOfRange for 1.5")
+  }
+}
