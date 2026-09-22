@@ -13,6 +13,9 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [x] `rolling`: duration-based windows via `rolling_by(window_ms, min_periods, agg)` (half-open, pandas-compatible)
 - [x] `resample`: calendar binning (s / min / h / day / week / month) + counted steps (`Counted(5, Minute)` → `5min` bins) with mean / sum / min / max / std
 - [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
+- [x] `ewm_mean`: exponentially weighted mean with the full pandas `adjust` × `ignore_na` semantics and alpha / span / halflife / com decays
+- [x] `interpolate`: linear gap filling, pandas `method='time'` (time-weighted) or `method='linear'` (positional)
+- [x] tests: 82 total — numeric behavior pinned against pandas 2.3.3 ground truth, plus 6 quickcheck property tests
 - [x] demo CLI: `moon run cli` — CSV in (argument), CSV out (stdout)
 
 ## Quick example
@@ -42,7 +45,7 @@ moon run cli -- resample 5min sum "$(< busy_minutes.csv)"   # counted steps
 - Timestamps are UTC epoch milliseconds as `Int64` (MoonBit's `Int` is 32-bit); timezone handling is out of scope for v0. Week bins start on Monday.
 - Fixed-size bins share one formula, `t - floor_mod(t - anchor, step)`: simple frequencies are the step-1 case, counted frequencies scale the step, and `Month` is the only calendar (non-uniform) bucket, handled separately.
 - Values are `Double`; `NaN` marks a missing observation.
-- Zero third-party dependencies: pure MoonBit, runs on all backends.
+- Zero third-party dependencies: pure MoonBit; CI runs the whole suite on the default, JavaScript (`--target js`) and `wasm-gc` backends.
 
 ## Develop
 

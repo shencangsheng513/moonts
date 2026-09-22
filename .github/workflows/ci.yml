@@ -29,3 +29,9 @@ jobs:
 
       - name: Test
         run: moon test
+
+      - name: Test (JavaScript backend, via node)
+        run: moon test --target js
+
+      - name: Test (wasm-gc backend)
+        run: moon test --target wasm-gc
