@@ -2,9 +2,25 @@
 
 [![CI](https://github.com/shencangsheng513/moonts/actions/workflows/ci.yml/badge.svg)](https://github.com/shencangsheng513/moonts/actions/workflows/ci.yml)
 
-Time-series transformation library for [MoonBit](https://www.moonbitlang.com): rolling windows, calendar resampling, and fill strategies — the pandas-style primitives the MoonBit ecosystem is missing.
+Time-series transformation library for [MoonBit](https://www.moonbitlang.com): timestamp-indexed `Series` with pandas-compatible rolling windows, calendar resampling (including offset grids), fill strategies, `ewm_mean`, and `interpolate`.
 
 > 🚧 WIP — 2026 MoonBit Hackathon (September edition) entry. This repository is developed in the open; see the issue tracker for the build plan.
+
+## How this differs from existing Mooncakes packages
+
+Adjacent packages exist; none of them does timestamp-indexed, pandas-semantics
+*transformation*. Concretely:
+
+| Package | What it does | What MoonTS adds |
+|---|---|---|
+| `smallbearrr/pandas` | generic DataFrame/Series (columns, filter, sort, CSV I/O) | no time-series features at all: no rolling, resample, ewm, interpolate, no timestamp index |
+| `wjhsb1/time-series-forecasting` | forecasting: exponential smoothing models, seasonal decomposition, backtesting | it *predicts the future*; MoonTS *transforms the observed series* (windowed aggregates, calendar bins, gap repair) with pinned pandas semantics |
+| `cn-wn/MoonSignalKit` | streaming telemetry stats, simple EWMA smoothing, change detection | MoonTS implements the full pandas `ewm(adjust, ignore_na)` matrix (4 combinations, verified against pandas ground truth), half-open duration windows, and calendar resampling with week/month anchors and offsets |
+| `liuminyuan/moon-missingness` | missing-data diagnosis and imputation (MICE, hot-deck) | MoonTS's fills are the pandas-compatible time-series primitives (`ffill`/`bfill`/time-weighted `interpolate`) meant to compose with resample output, not statistical imputation |
+
+The one capability no package above has: **offset-aware calendar binning**
+(`resample d mean --offset=9h` bins "trading days" from 09:00 UTC, matching
+pandas `resample('24h', offset='9h')` row for row).
 
 ## Status
 
@@ -12,10 +28,11 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [x] `rolling` (count windows): `rolling_mean` / `sum` / `min` / `max` / `std` with `min_periods` semantics
 - [x] `rolling`: duration-based windows via `rolling_by(window_ms, min_periods, agg)` (half-open, pandas-compatible)
 - [x] `resample`: calendar binning (s / min / h / day / week / month) + counted steps (`Counted(5, Minute)` → `5min` bins) with mean / sum / min / max / std
+- [x] `resample_offset`: shifted bin grids (`resample_offset(Day, Mean, 9h)` = "day starts 09:00"), matching pandas `offset=...`; applied consistently to `Month` too, where pandas silently ignores it (documented deviation)
 - [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
 - [x] `ewm_mean`: exponentially weighted mean with the full pandas `adjust` × `ignore_na` semantics and alpha / span / halflife / com decays
 - [x] `interpolate`: linear gap filling, pandas `method='time'` (time-weighted) or `method='linear'` (positional)
-- [x] tests: 86 total — numeric behavior pinned against pandas 2.3.3 ground truth, plus 6 quickcheck property tests
+- [x] tests: 95 total — numeric behavior pinned against pandas 2.3.3 ground truth, plus 6 quickcheck property tests
 - [x] demo CLI: `moon run cli` — CSV in (argument), CSV out (stdout)
 
 ## Quick example
@@ -38,6 +55,7 @@ moon run cli -- rolling 2 mean "1000,1.0
 2000,2.0"
 moon run cli -- resample d mean --ffill "$(cat series.csv)" > daily.csv
 moon run cli -- resample 5min sum "$(< busy_minutes.csv)"   # counted steps
+moon run cli -- resample d mean --offset=9h "$(cat trading_hours.csv)"  # day from 09:00 UTC
 moon run cli -- ewm span=3 false false "0,1.0
 1000,2.0
 2000,3.0"                          # pandas ewm(adjust=False) semantics
@@ -56,7 +74,7 @@ positional says "samples are conceptually evenly spaced". Pick deliberately.
 ## Design notes
 
 - Timestamps are UTC epoch milliseconds as `Int64` (MoonBit's `Int` is 32-bit); timezone handling is out of scope for v0. Week bins start on Monday.
-- Fixed-size bins share one formula, `t - floor_mod(t - anchor, step)`: simple frequencies are the step-1 case, counted frequencies scale the step, and `Month` is the only calendar (non-uniform) bucket, handled separately.
+- Fixed-size bins share one formula, `t - floor_mod(t - anchor, step)`: simple frequencies are the step-1 case, counted frequencies scale the step, and `Month` is the only calendar (non-uniform) bucket, handled separately. An `offset` shifts the grid via `bucket(t - offset) + offset` — one mechanism, every frequency, including the `Month` case where pandas drops the offset on the floor.
 - Values are `Double`; `NaN` marks a missing observation.
 - Zero third-party dependencies: pure MoonBit; CI runs the whole suite on the default, JavaScript (`--target js`) and `wasm-gc` backends.
 
