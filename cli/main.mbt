@@ -16,7 +16,7 @@ impl Show for CliError with fn output(self : CliError, logger) {
 ///|
 
 ///|
-let usage : String = "moonts <command> [args...]\n  (no args) or `demo`  built-in demo pipeline\n  resample <freq> <agg> [--ffill] <csv>\n  rolling <count | duration> <agg> <csv>\n  ewm <decay> <adjust> <ignore_na> <csv>\n  interp <time|pos> <csv>\nfreq: s | min | h | d | w | me, or counted (5min, 2h, 30s, 7d, 2w)\nagg:  mean | sum | min | max | std\ndecay: alpha=<a> | span=<s> | halflife=<h> | com=<c>\nadjust/ignore_na: true | false (pandas ewm flags)\nduration: <n><s|min|h|d|w>, e.g. 90min, 2h, 7d"
+let usage : String = "moonts <command> [args...]\n  (no args) or `demo`  built-in demo pipeline\n  resample <freq> <agg> [--ffill] [--offset=<dur>] <csv>\n  rolling <count | duration> <agg> <csv>\n  ewm <decay> <adjust> <ignore_na> <csv>\n  interp <time|pos> <csv>\nfreq: s | min | h | d | w | me, or counted (5min, 2h, 30s, 7d, 2w)\nagg:  mean | sum | min | max | std\ndecay: alpha=<a> | span=<s> | halflife=<h> | com=<c>\nadjust/ignore_na: true | false (pandas ewm flags)\nduration: <n><s|min|h|d|w>, e.g. 90min, 2h, 7d\noffset: same formats; shifts the bin grid (e.g. day from 09:00)"
 
 ///|
 fn parse_bool(s : String) -> Bool raise CliError {
@@ -141,19 +141,36 @@ fn run(argv : Array[String]) -> String raise {
       s.interpolate(kind).to_csv_string()
     }
     n if n >= 4 && argv[0] == "resample" => {
-      let (csv_at, ffill) = if n == 4 {
-        (3, false)
-      } else if n == 5 && argv[3] == "--ffill" {
-        (4, true)
-      } else {
-        raise Usage(
-          "resample: expected 'resample <freq> <agg> [--ffill] <csv>'",
-        )
+      let csv_at = n - 1
+      let mut ffill = false
+      let mut offset_ms : Int64 = 0L
+      for i in 3..<csv_at {
+        let a = argv[i]
+        if a == "--ffill" {
+          ffill = true
+        } else if a.has_prefix("--offset=") {
+          let spec = a[9:].to_owned()
+          offset_ms = match parse_duration_ms(spec) {
+            Some(ms) => ms
+            None =>
+              raise Usage(
+                "bad --offset '\{spec}': expected a duration like 9h, 30min, 2h",
+              )
+          }
+        } else {
+          raise Usage(
+            "resample: unexpected argument '\{a}'; flags are --ffill and --offset=<dur>, csv goes last",
+          )
+        }
       }
       let freq = parse_freq(argv[1])
       let agg = parse_agg(argv[2])
       let s = @moonts.Series::from_csv_string(argv[csv_at])
-      let out = s.resample(freq, agg)
+      let out = if offset_ms == 0L {
+        s.resample(freq, agg)
+      } else {
+        s.resample_offset(freq, agg, offset_ms)
+      }
       if ffill {
         out.ffill().to_csv_string()
       } else {

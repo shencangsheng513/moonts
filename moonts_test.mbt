@@ -318,6 +318,7 @@ test "resample guards against corrupted ranges" {
   let s = series_at([0L, 30000000000000000L], [1.0, 2.0])
   try (s.resample(@moonts.Month, @moonts.Mean) : @moonts.Series) catch {
     @moonts.TooManyBins(_) => ()
+    e => fail("expected TooManyBins, got \{e}")
   } noraise {
     _ => fail("expected TooManyBins")
   }
@@ -818,4 +819,86 @@ test "interpolate keeps timestamps and never mutates the input series" {
   assert_doubles_eq(got.values, [0.0, 2.0, 4.0])
   // Copy semantics: the original still shows its hole.
   assert_doubles_eq(s.values, [0.0, nan, 4.0])
+}
+
+///|
+test "resample_offset(Day, 9h) matches pandas resample('24h', offset='9h')" {
+  // pandas 2.3.3 ground truth: 2024-01-01 08:00/10:00, 01-02 03:00, 01-03 12:00
+  // -> bins start 2023-12-31 09:00; values 1.0 / mean(2,3)=2.5 / NaN / 4.0
+  let s = series_at(
+    [1704096000000, 1704103200000, 1704164400000, 1704283200000],
+    [1.0, 2.0, 3.0, 4.0],
+  )
+  let got = s.resample_offset(@moonts.Day, @moonts.Mean, 32400000L) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [
+    1704013200000, 1704099600000, 1704186000000, 1704272400000,
+  ])
+  assert_doubles_eq(got.values, [1.0, 2.5, nan, 4.0])
+}
+
+///|
+test "resample_offset(2h, 30min) matches pandas resample('2h', offset='30min')" {
+  // pandas: 00:20 -> bin 2023-12-31 22:30; 01:40 and 02:10 share bin 00:30
+  let s = series_at([1704068400000, 1704073200000, 1704075000000], [
+    10.0, 20.0, 30.0,
+  ])
+  let got = s.resample_offset(
+    @moonts.Counted(2, @moonts.BasicFrequency::Hour),
+    @moonts.Mean,
+    1800000L,
+  ) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [1704061800000, 1704069000000])
+  assert_doubles_eq(got.values, [10.0, 25.0])
+}
+
+///|
+test "resample_offset with offset 0 equals resample" {
+  let s = series_at([0, 3600000, 7200000, 86400000], [1.0, 2.0, 3.0, 10.0])
+  let plain = s.resample(@moonts.Day, @moonts.Mean) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let zero = s.resample_offset(@moonts.Day, @moonts.Mean, 0L) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(zero.ts, plain.ts)
+  assert_doubles_eq(zero.values, plain.values)
+}
+
+///|
+test "resample_offset(Month) shifts the grid where pandas ignores offset" {
+  // Deliberate deviation: pandas silently drops offset for month freqs.
+  // Here bins start on the 2nd: 2024-01-01 12:00 -> 2023-12-02 bin,
+  // 2024-02-05 -> 2024-02-02 bin, with an empty 2024-01-02 bin between.
+  let s = series_at([1704110400000, 1707091200000], [5.0, 7.0])
+  let got = s.resample_offset(@moonts.Month, @moonts.Mean, 86400000L) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  @test.assert_eq(got.ts, [1701475200000, 1704153600000, 1706832000000])
+  assert_doubles_eq(got.values, [5.0, nan, 7.0])
+}
+
+///|
+test "resample_offset rejects offsets outside [0, step)" {
+  let s = series_at([0, 1000], [1.0, 2.0])
+  // a full day is not a valid offset for day bins
+  try
+    (s.resample_offset(@moonts.Day, @moonts.Mean, 86400000L) : @moonts.Series)
+  catch {
+    @moonts.InvalidOffsetMs(_) => ()
+    e => fail("expected InvalidOffsetMs, got \{e}")
+  } noraise {
+    _ => fail("expected InvalidOffsetMs for offset == step")
+  }
+  try
+    (s.resample_offset(@moonts.Day, @moonts.Mean, -1L) : @moonts.Series)
+  catch {
+    @moonts.InvalidOffsetMs(_) => ()
+    e => fail("expected InvalidOffsetMs, got \{e}")
+  } noraise {
+    _ => fail("expected InvalidOffsetMs for negative offset")
+  }
 }

@@ -228,3 +228,57 @@ test "bad adjust flag raises Usage; out-of-range decay propagates EwmError" {
     _ => fail("expected AlphaOutOfRange for alpha=5")
   }
 }
+
+///|
+test "resample --offset=9h shifts daily bins like pandas offset='9h'" {
+  let csv = "timestamp,value\n1704096000000,1.0\n1704103200000,2.0\n1704164400000,3.0\n1704283200000,4.0"
+  let out = run(["resample", "d", "mean", "--offset=9h", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let s = @moonts.Series::from_csv_string(out) catch { e => fail("\{e}") }
+  @test.assert_eq(s.ts, [
+    1704013200000L, 1704099600000L, 1704186000000L, 1704272400000L,
+  ])
+  @test.assert_eq(s.values[0], 1.0)
+  @test.assert_eq(s.values[1], 2.5)
+  @test.assert_eq(s.values[2].is_nan(), true)
+  @test.assert_eq(s.values[3], 4.0)
+}
+
+///|
+test "resample accepts flags in any order before the csv" {
+  let csv = "timestamp,value\n1704096000000,1.0\n1704103200000,2.0\n1704164400000,3.0\n1704283200000,4.0"
+  let out = run(["resample", "d", "mean", "--offset=9h", "--ffill", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let s = @moonts.Series::from_csv_string(out) catch { e => fail("\{e}") }
+  assert_doubles(s.values, [1.0, 2.5, 2.5, 4.0])
+}
+
+///|
+test "bad --offset duration and unknown flags raise Usage" {
+  try (run(["resample", "d", "mean", "--offset=9x", "0,1.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for bad offset")
+  }
+  try (run(["resample", "d", "mean", "--bogus", "0,1.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for unknown flag")
+  }
+}
+
+///|
+test "offset not smaller than step propagates InvalidOffsetMs" {
+  try
+    (run(["resample", "d", "mean", "--offset=24h", "0,1.0\n1000,2.0"]) : String)
+  catch {
+    @moonts.InvalidOffsetMs(_) => ()
+    e => fail("expected InvalidOffsetMs, got \{e}")
+  } noraise {
+    _ => fail("expected InvalidOffsetMs for offset == step")
+  }
+}

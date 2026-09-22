@@ -327,6 +327,7 @@ fn parse_counted(s : String) -> Frequency? {
 ///|
 pub suberror ResampleError {
   TooManyBins(Int)
+  InvalidOffsetMs(Int64)
 }
 
 ///|
@@ -335,6 +336,10 @@ pub impl Show for ResampleError with fn output(self : ResampleError, logger) {
     TooManyBins(n) =>
       logger.write_string(
         "resample reached \{n} bins (limit 10000000); the input range looks corrupted",
+      )
+    InvalidOffsetMs(ms) =>
+      logger.write_string(
+        "resample offset \{ms}ms must be at least 0 and smaller than the bin step",
       )
   }
 }
@@ -495,6 +500,65 @@ fn finish_bucket(buf : Array[Double], agg : Agg) -> Double {
 }
 
 ///|
+/// Grid bucketing shifted by `offset`: subtract the offset, bucket on the
+/// plain calendar grid, add it back. This reproduces pandas'
+/// `resample(freq, offset=...)` exactly (verified against pandas 2.3.3).
+fn bucket_start_offset(t : Int64, freq : Frequency, offset : Int64) -> Int64 {
+  bucket_start(t - offset, freq) + offset
+}
+
+///|
+fn nxt_bucket_start_offset(
+  start : Int64,
+  freq : Frequency,
+  offset : Int64,
+) -> Int64 {
+  nxtbucket_start(start - offset, freq) + offset
+}
+
+///|
+fn Series::resample_grid(
+  self : Series,
+  freq : Frequency,
+  agg : Agg,
+  offset : Int64,
+) -> Series raise ResampleError {
+  let n = self.values.length()
+  let last_bin = bucket_start_offset(self.ts[n - 1], freq, offset)
+  let out_ts = Array(capacity=n)
+  let out_vals = Array(capacity=n)
+  let buf = Array(capacity=4)
+  let mut bin = bucket_start_offset(self.ts[0], freq, offset)
+  for idx in 0..<n {
+    let b = bucket_start_offset(self.ts[idx], freq, offset)
+    while bin != b {
+      out_ts.push(bin)
+      out_vals.push(finish_bucket(buf, agg))
+      buf.clear()
+      if out_ts.length() > max_bins {
+        raise TooManyBins(out_ts.length())
+      }
+      bin = nxt_bucket_start_offset(bin, freq, offset)
+    }
+    let v = self.values[idx]
+    if !v.is_nan() {
+      buf.push(v)
+    }
+  }
+  out_ts.push(bin)
+  out_vals.push(finish_bucket(buf, agg))
+  while bin != last_bin {
+    bin = nxt_bucket_start_offset(bin, freq, offset)
+    out_ts.push(bin)
+    out_vals.push(nan)
+    if out_ts.length() > max_bins {
+      raise TooManyBins(out_ts.length())
+    }
+  }
+  Series::{ ts: out_ts, values: out_vals, }
+}
+
+///|
 /// Down-sample to fixed calendar buckets, like pandas' `resample(freq)`.
 ///
 /// The output covers the full grid from the first bucket to the last bucket
@@ -510,39 +574,37 @@ pub fn Series::resample(
   freq : Frequency,
   agg : Agg,
 ) -> Series raise ResampleError {
-  let n = self.values.length()
-  let last_bin = bucket_start(self.ts[n - 1], freq)
-  let out_ts = Array(capacity=n)
-  let out_vals = Array(capacity=n)
-  let buf = Array(capacity=4)
-  let mut bin = bucket_start(self.ts[0], freq)
-  for idx in 0..<n {
-    let b = bucket_start(self.ts[idx], freq)
-    while bin != b {
-      out_ts.push(bin)
-      out_vals.push(finish_bucket(buf, agg))
-      buf.clear()
-      if out_ts.length() > max_bins {
-        raise TooManyBins(out_ts.length())
-      }
-      bin = nxtbucket_start(bin, freq)
-    }
-    let v = self.values[idx]
-    if !v.is_nan() {
-      buf.push(v)
-    }
+  self.resample_grid(freq, agg, 0L)
+}
+
+///|
+/// Like `resample`, but the whole bin grid is shifted by `offset_ms`,
+/// matching pandas' `resample(freq, offset=...)`. This is what makes
+/// "bin the trading day from 09:00, not midnight" expressible:
+/// `resample_offset(Day, Mean, 9 * 3600000L)` bins per day starting 09:00 UTC.
+///
+/// `offset_ms` must satisfy `0 <= offset_ms < step`; for calendar Month the
+/// bound is 28 days, the shortest month, so an offset can never push a bin
+/// past its own month.
+///
+/// Deliberate deviation from pandas: `resample` with a month frequency
+/// silently ignores pandas' `offset`; here the offset is applied as the same
+/// grid shift as every other frequency, so the semantics never depend on
+/// which frequency you happened to pick.
+pub fn Series::resample_offset(
+  self : Series,
+  freq : Frequency,
+  agg : Agg,
+  offset_ms : Int64,
+) -> Series raise ResampleError {
+  let upper = match step_anchor(freq) {
+    Some((step, _)) => step
+    None => 28L * day_ms
   }
-  out_ts.push(bin)
-  out_vals.push(finish_bucket(buf, agg))
-  while bin != last_bin {
-    bin = nxtbucket_start(bin, freq)
-    out_ts.push(bin)
-    out_vals.push(nan)
-    if out_ts.length() > max_bins {
-      raise TooManyBins(out_ts.length())
-    }
+  if offset_ms < 0L || offset_ms >= upper {
+    raise InvalidOffsetMs(offset_ms)
   }
-  Series::{ ts: out_ts, values: out_vals, }
+  self.resample_grid(freq, agg, offset_ms)
 }
 
 ///|

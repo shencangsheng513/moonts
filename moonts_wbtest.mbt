@@ -31,6 +31,10 @@ test "error Show texts are stable user-facing strings" {
     "resample reached 200 bins (limit 10000000); the input range looks corrupted",
   )
   @test.assert_eq(
+    InvalidOffsetMs(90000000L).to_string(),
+    "resample offset 90000000ms must be at least 0 and smaller than the bin step",
+  )
+  @test.assert_eq(
     Malformed(7, "x,y,z").to_string(),
     "line 7: expected 'ms,value', got 'x,y,z'",
   )

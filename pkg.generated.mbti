@@ -28,6 +28,7 @@ pub impl Show for EwmError
 
 pub suberror ResampleError {
   TooManyBins(Int)
+  InvalidOffsetMs(Int64)
 }
 pub fn ResampleError::output(Self, &Logger) -> Unit
 pub fn ResampleError::to_string(Self) -> String
@@ -119,6 +120,7 @@ pub fn Series::from_csv_string(String) -> Self raise
 pub fn Series::interpolate(Self, Interpolation) -> Self
 pub fn Series::new(Array[Int64], Array[Double]) -> Self raise SeriesError
 pub fn Series::resample(Self, Frequency, Agg) -> Self raise ResampleError
+pub fn Series::resample_offset(Self, Frequency, Agg, Int64) -> Self raise ResampleError
 pub fn Series::rolling_by(Self, Int64, Int, Agg) -> Self raise RollingError
 pub fn Series::rolling_max(Self, Int, Int) -> Self raise RollingError
 pub fn Series::rolling_mean(Self, Int, Int) -> Self raise RollingError
