@@ -98,6 +98,14 @@ pub fn Frequency::from_string(String) -> Self?
 pub fn Frequency::not_equal(Self, Self) -> Bool
 pub fn Frequency::to_repr(Self) -> @debug.Repr
 
+pub(all) enum Interpolation {
+  TimeWeighted
+  Positional
+} derive(Eq, @debug.Debug)
+pub fn Interpolation::equal(Self, Self) -> Bool
+pub fn Interpolation::not_equal(Self, Self) -> Bool
+pub fn Interpolation::to_repr(Self) -> @debug.Repr
+
 pub struct Series {
   ts : Array[Int64]
   values : Array[Double]
@@ -108,6 +116,7 @@ pub fn Series::ewm_mean(Self, Decay, Bool, Bool) -> Self raise EwmError
 pub fn Series::ffill(Self) -> Self
 pub fn Series::fill_constant(Self, Double) -> Self
 pub fn Series::from_csv_string(String) -> Self raise
+pub fn Series::interpolate(Self, Interpolation) -> Self
 pub fn Series::new(Array[Int64], Array[Double]) -> Self raise SeriesError
 pub fn Series::resample(Self, Frequency, Agg) -> Self raise ResampleError
 pub fn Series::rolling_by(Self, Int64, Int, Agg) -> Self raise RollingError
