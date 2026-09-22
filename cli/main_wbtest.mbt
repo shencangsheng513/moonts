@@ -171,3 +171,60 @@ test "CliError Show text is stable" {
   let boom = "boom"
   @test.assert_eq("\{Usage(boom)}", "usage error: boom")
 }
+
+///|
+test "ewm span=3 adjust=false matches pandas ewm on [1,2,3]" {
+  let out = run(["ewm", "span=3", "false", "false", "0,1.0\n1000,2.0\n2000,3.0"]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let s = @moonts.Series::from_csv_string(out) catch { e => fail("\{e}") }
+  // span=3 -> alpha=0.5; adjust=False on [1,2,3] -> [1.0, 1.5, 2.25]
+  assert_doubles(s.values, [1.0, 1.5, 2.25])
+}
+
+///|
+test "interp time and pos both fill the middle of an even gap with 2.0" {
+  let csv = "0,1.0\n1000,\n2000,3.0"
+  let t = run(["interp", "time", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let ts = @moonts.Series::from_csv_string(t) catch { e => fail("\{e}") }
+  assert_doubles(ts.values, [1.0, 2.0, 3.0])
+  let p = run(["interp", "pos", csv]) catch {
+    e => fail("unexpected error: \{e}")
+  }
+  let ps = @moonts.Series::from_csv_string(p) catch { e => fail("\{e}") }
+  assert_doubles(ps.values, [1.0, 2.0, 3.0])
+}
+
+///|
+test "bad decay and bad interp kind raise Usage" {
+  try (run(["ewm", "span", "true", "false", "0,1.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for decay without '='")
+  }
+  try (run(["interp", "linear", "0,1.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for bad interp kind")
+  }
+}
+
+///|
+test "bad adjust flag raises Usage; out-of-range decay propagates EwmError" {
+  try (run(["ewm", "span=3", "yes", "false", "0,1.0"]) : String) catch {
+    Usage(_) => ()
+    e => fail("expected Usage, got \{e}")
+  } noraise {
+    _ => fail("expected Usage for 'yes'")
+  }
+  try (run(["ewm", "alpha=5", "true", "false", "0,1.0"]) : String) catch {
+    @moonts.AlphaOutOfRange(_) => ()
+    e => fail("expected AlphaOutOfRange, got \{e}")
+  } noraise {
+    _ => fail("expected AlphaOutOfRange for alpha=5")
+  }
+}

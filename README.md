@@ -38,7 +38,20 @@ moon run cli -- rolling 2 mean "1000,1.0
 2000,2.0"
 moon run cli -- resample d mean --ffill "$(cat series.csv)" > daily.csv
 moon run cli -- resample 5min sum "$(< busy_minutes.csv)"   # counted steps
+moon run cli -- ewm span=3 false false "0,1.0
+1000,2.0
+2000,3.0"                          # pandas ewm(adjust=False) semantics
+moon run cli -- interp time "0,1.0
+21600000,
+86400000,24.0"                     # -> 6.75: fill by elapsed time
+moon run cli -- interp pos  "0,1.0
+21600000,
+86400000,24.0"                     # -> 12.5: fill by index position
 ```
+
+The last two commands answer the same hole in the data with two different
+business judgments — time-weighted says "the value drifts with the clock",
+positional says "samples are conceptually evenly spaced". Pick deliberately.
 
 ## Design notes
 
