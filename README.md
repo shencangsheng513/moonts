@@ -15,7 +15,7 @@ Time-series transformation library for [MoonBit](https://www.moonbitlang.com): r
 - [x] fill strategies: `ffill` / `bfill` / `fill_constant` / `drop_missing` (pandas semantics)
 - [x] `ewm_mean`: exponentially weighted mean with the full pandas `adjust` × `ignore_na` semantics and alpha / span / halflife / com decays
 - [x] `interpolate`: linear gap filling, pandas `method='time'` (time-weighted) or `method='linear'` (positional)
-- [x] tests: 82 total — numeric behavior pinned against pandas 2.3.3 ground truth, plus 6 quickcheck property tests
+- [x] tests: 86 total — numeric behavior pinned against pandas 2.3.3 ground truth, plus 6 quickcheck property tests
 - [x] demo CLI: `moon run cli` — CSV in (argument), CSV out (stdout)
 
 ## Quick example
